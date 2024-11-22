@@ -22,9 +22,6 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Логи
-exec > >(tee -i "$LOG_FILE") 2>&1
-
 if [ -f "$SUPERVISOR_CONF" ]; then
     echo -e "${YELLOW}Обнаружена старая версия бота. Остановить и удалить? (y/n): ${NC}"
     read -r CONFIRM

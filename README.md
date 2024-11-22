@@ -28,9 +28,10 @@ KVAS VPN Bot - это Telegram-бот для управления спискам
 ```
 
 ### Шаг 2: Установка бота
-Подключитесь к роутеру по SSH и запустите скрипт установки:
+1. Зайдите в терминале по ssh в оболочку entware своего роутера и выполните команду `cd /opt/tmp`
+2. Запустите скрипт установки:
 ```bash
-curl -sSL https://github.com/flathead/kvas_bot/raw/main/scripts/install_bot.sh | bash
+curl -sOfL https://github.com/flathead/kvas_bot/raw/main/scripts/install_bot.sh && sh install_bot.sh
 ```
 
 ### Шаг 3: Конфигурация
