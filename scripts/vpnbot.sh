@@ -11,7 +11,8 @@ NC='\033[0m' # Сброс цвета
 # Параметры
 BOT_DIR="/apps/vpnbot"
 VENV_DIR="$BOT_DIR/venv"
-SUPERVISOR_CONF="/etc/supervisor/conf.d/vpnbot.conf"
+DAEMON_SCRIPT="/usr/local/bin/vpnbot_daemon"
+PID_FILE="/var/run/vpnbot.pid"
 
 # Заголовок
 print_header() {
@@ -28,6 +29,7 @@ print_help() {
     echo -e "${YELLOW}Доступные команды:${NC}"
     echo -e "  ${GREEN}start${NC}     - Запускает бота"
     echo -e "  ${GREEN}stop${NC}      - Останавливает бота"
+    echo -e "  ${GREEN}restart${NC}   - Перезапускает бота"
     echo -e "  ${GREEN}upgrade${NC}   - Обновляет репозиторий и перезапускает бота"
     echo -e "  ${GREEN}help${NC}      - Показывает это сообщение"
     echo -e ""
@@ -35,53 +37,52 @@ print_help() {
     echo -e "  ${GREEN}-h, --help${NC} - Показывает это сообщение"
 }
 
-# Проверка наличия supervisord
-check_supervisor() {
-    if ! command -v supervisord &>/dev/null; then
-        echo -e "${YELLOW}Устанавливаю supervisord...${NC}"
-        opkg update && opkg install python3-supervisor
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}Ошибка установки supervisord. Проверьте подключение к интернету.${NC}"
-            exit 1
-        fi
-        echo -e "${GREEN}supervisord успешно установлен!${NC}"
-    fi
-}
-
-# Создание конфигурации supervisord
-create_supervisor_config() {
-    if [ ! -f "$SUPERVISOR_CONF" ]; then
-        echo -e "${YELLOW}Создаю конфигурацию supervisord для бота...${NC}"
-        cat <<EOF >"$SUPERVISOR_CONF"
-[program:vpnbot]
-command=$VENV_DIR/bin/python3 $BOT_DIR/bot.py
-directory=$BOT_DIR
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/vpnbot.err.log
-stdout_logfile=/var/log/vpnbot.out.log
-EOF
-        echo -e "${GREEN}Конфигурация supervisord создана: ${SUPERVISOR_CONF}${NC}"
+# Проверка запущенного процесса
+is_bot_running() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" &>/dev/null; then
+        return 0
+    else
+        return 1
     fi
 }
 
 # Запуск бота
 start_bot() {
-    check_supervisor
-    create_supervisor_config
-    echo -e "${YELLOW}Запускаю supervisord...${NC}"
-    supervisord
-    supervisorctl reread
-    supervisorctl update
-    supervisorctl start vpnbot
-    echo -e "${GREEN}Бот успешно запущен!${NC}"
+    if is_bot_running; then
+        echo -e "${YELLOW}Бот уже запущен.${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Запускаю бота...${NC}"
+    $DAEMON_SCRIPT
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Бот успешно запущен!${NC}"
+    else
+        echo -e "${RED}Ошибка при запуске бота.${NC}"
+    fi
 }
 
 # Остановка бота
 stop_bot() {
+    if ! is_bot_running; then
+        echo -e "${YELLOW}Бот уже остановлен.${NC}"
+        return 0
+    fi
+
     echo -e "${YELLOW}Останавливаю бота...${NC}"
-    supervisorctl stop vpnbot
-    echo -e "${GREEN}Бот успешно остановлен!${NC}"
+    kill "$(cat "$PID_FILE")" && rm -f "$PID_FILE"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Бот успешно остановлен!${NC}"
+    else
+        echo -e "${RED}Ошибка при остановке бота.${NC}"
+    fi
+}
+
+# Перезапуск бота
+restart_bot() {
+    echo -e "${YELLOW}Перезапускаю бота...${NC}"
+    stop_bot
+    start_bot
 }
 
 # Обновление бота
@@ -93,9 +94,7 @@ upgrade_bot() {
     source "$VENV_DIR/bin/activate"
     pip install --upgrade -r requirements.txt
     deactivate
-    echo -e "${YELLOW}Перезапускаю бота...${NC}"
-    stop_bot
-    start_bot
+    restart_bot
     echo -e "${GREEN}Бот успешно обновлён и перезапущен!${NC}"
 }
 
@@ -106,6 +105,9 @@ start)
     ;;
 stop)
     stop_bot
+    ;;
+restart)
+    restart_bot
     ;;
 upgrade)
     upgrade_bot
