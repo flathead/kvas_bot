@@ -1,0 +1,5 @@
+.env
+router_bot.log
+__pycache__
+app/__pycache__
+venv

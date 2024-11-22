@@ -1,0 +1,6 @@
+aiogram
+asyncssh
+paramiko
+python-dotenv
+setuptools
+wheel
