@@ -15,7 +15,7 @@ REPO_OWNER="flathead"
 REPO_NAME="kvas_bot"
 SCRIPT_PATH="/usr/local/bin/vpnbot"
 LOG_FILE="/var/log/vpnbot_install.log"
-PYTHON_DEPS="aiogram asyncssh paramiko python-dotenv setuptools wheel"
+PYTHON_DEPS="aiogram asyncio python-dotenv setuptools wheel"
 
 # Проверка прав root
 if [ "$(id -u)" -ne 0 ]; then
