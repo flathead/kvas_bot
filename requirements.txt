@@ -1,6 +1,7 @@
-aiogram
-asyncssh
-paramiko
-python-dotenv
-setuptools
-wheel
+aiogram==3.15.0
+python-dotenv==1.0.1
+setuptools==75.6.0
+wheel==0.45.0
+
+# pip download -r requirements.txt -d deps --only-binary=:all:
+# tar -czvf deps.tar.gz deps

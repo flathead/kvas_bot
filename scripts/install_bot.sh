@@ -117,9 +117,12 @@ install_requirements() {
     log "${YELLOW}Установка зависимостей Python...${NC}"
     . "$VENV_DIR/bin/activate"
 
+    # Путь к архиву с зависимостями
+    DEPS_ARCHIVE="$BOT_DIR/deps.tar.gz"
+
     # Проверка наличия архива
-    if [ ! -f "$BASE_DIR/deps.tar.gz" ]; then
-        log "${RED}Архив зависимостей не найден!${NC}"
+    if [ ! -f "$DEPS_ARCHIVE" ]; then
+        log "${RED}Архив зависимостей не найден: $DEPS_ARCHIVE!${NC}"
         deactivate
         exit 1
     fi
@@ -130,16 +133,17 @@ install_requirements() {
 
     # Распаковка архива
     log "${YELLOW}Распаковка архива зависимостей...${NC}"
-    tar --strip-components=1 -xzf "$BASE_DIR/deps.tar.gz" -C "$TEMP_DEPS_DIR" || {
+    # Использование совместимой команды tar
+    tar -xzvf "$DEPS_ARCHIVE" -C "$TEMP_DEPS_DIR" || {
         log "${RED}Ошибка распаковки архива зависимостей.${NC}"
         rm -rf "$TEMP_DEPS_DIR"
         deactivate
         exit 1
     }
 
-    # Установка зависимостей из временной папки
+    # Установка зависимостей из распакованной папки
     log "${YELLOW}Установка зависимостей из локального архива...${NC}"
-    pip install --no-cache-dir --no-index --find-links="$TEMP_DEPS_DIR" *.whl || {
+    find "$TEMP_DEPS_DIR" -name '*.whl' -exec pip install --no-cache-dir --no-index --find-links="$TEMP_DEPS_DIR" {} + || {
         log "${RED}Ошибка установки зависимостей.${NC}"
         rm -rf "$TEMP_DEPS_DIR"
         deactivate
