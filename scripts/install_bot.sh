@@ -249,7 +249,7 @@ setup_bot() {
     setup_management_script
     setup_autostart
     log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
-    "$SCRIPT_PATH" start
+    vpnbot start
     log "${GREEN}Бот успешно установлен и запущен.${NC}"
 }
 
