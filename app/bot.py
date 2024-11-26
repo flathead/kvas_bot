@@ -20,9 +20,10 @@ from app.logger import get_logger
 
 # Enum-like states for clearer state management
 class ConversationStates:
-    ADD_SITE = 0
-    DELETE_SITE = 1
-    REBOOT_ROUTER = 2
+    ADD_SITE = 0        # Добавление сайта
+    DELETE_SITE = 1     # Удаление сайта
+    REBOOT_ROUTER = 2   # Перезагрузка роутера
+    REBOOT_BOT = 3      # Перезагрузка бота
 
 class VPNBot:
     def __init__(self, config: Config, router_client: RouterLocalClient):
@@ -67,6 +68,7 @@ class VPNBot:
                 MessageHandler(filters.Regex(r"➕ Добавить сайт"), self.ask_add_site),
                 MessageHandler(filters.Regex(r"➖ Удалить сайт"), self.ask_delete_site),
                 MessageHandler(filters.Regex(r"🔄 Перезагрузить роутер"), self.ask_reboot_router),
+                MessageHandler(filters.Regex(r"🔄 Перезагрузить бота"), self.ask_reboot_bot),
             ],
             states={
                 ConversationStates.ADD_SITE: [
@@ -78,6 +80,9 @@ class VPNBot:
                 ConversationStates.REBOOT_ROUTER: [
                     MessageHandler(filters.Regex(r"^(Да|Нет)$"), self.reboot_router)
                 ],
+                ConversationStates.REBOOT_BOT: [
+                    MessageHandler(filters.Regex(r"^(Да|Нет)$"), self.reboot_bot)
+                ],
             },
             fallbacks=[CommandHandler('cancel', self.cancel_operation)],
             allow_reentry=True
@@ -86,7 +91,9 @@ class VPNBot:
         # Главные обработчики
         handlers = [
             CommandHandler("start", self.cmd_start),
+
             MessageHandler(filters.Regex(r"📜 Список сайтов"), self.list_sites),
+            MessageHandler(filters.Regex(r"🆘 Помощь"), self.cmd_help),
         ]
 
         # Добавление обработчиков
@@ -141,15 +148,6 @@ class VPNBot:
             except Exception as shutdown_error:
                 self.logger.error(f"Error during shutdown: {shutdown_error}")
 
-    async def _post_init(self, application: Application):
-        """Post-initialization setup."""
-        self.logger.info("Bot initialization complete.")
-        self._register_handlers()
-
-    async def _post_shutdown(self, application: Application):
-        """Cleanup after bot shutdown."""
-        self.logger.info("Bot shutdown complete.")
-
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start command handler."""
         if not await self._is_user_allowed(update.effective_user.id):
@@ -161,6 +159,18 @@ class VPNBot:
         
         await update.message.reply_text(
             MESSAGES['start'], 
+            reply_markup=self._get_menu_keyboard(), 
+            parse_mode="HTML"
+        )
+
+    async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Help command handler."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
+            return
+        
+        await update.message.reply_text(
+            MESSAGES['help'], 
             reply_markup=self._get_menu_keyboard(), 
             parse_mode="HTML"
         )
@@ -196,38 +206,60 @@ class VPNBot:
     async def add_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Добавление сайта с расширенной валидацией."""
         if update.message.text.lower() == 'отмена':
-            await update.message.reply_text("Операция отменена.", 
-                                            reply_markup=self._get_menu_keyboard())
+            await update.message.reply_text(
+                "Операция отменена.",
+                reply_markup=self._get_menu_keyboard()
+            )
             return ConversationHandler.END
 
         site = update.message.text.strip().lower()
-        
+
         if not self._validate_domain(site):
             await update.message.reply_text(
-                "❌ Некорректный формат домена. Пример: google.com", 
+                "❌ Некорректный формат домена. Пример: google.com",
                 reply_markup=self._get_menu_keyboard()
             )
             return ConversationHandler.END
 
         try:
-            output = await self.router_client.execute_command(f"kvas add {site} -y")
-            if "добавлен" in output.lower():
-                await update.message.reply_text(
-                    f"✅ Сайт {site} успешно добавлен.", 
-                    reply_markup=self._get_menu_keyboard()
-                )
-            else:
-                await update.message.reply_text(
-                    f"❌ Не удалось добавить сайт. Ответ: {output}", 
-                    reply_markup=self._get_menu_keyboard()
-                )
-        except Exception as e:
-            self.logger.error(f"Ошибка добавления сайта: {e}")
-            await update.message.reply_text(
-                f"❌ Произошла ошибка: {str(e)}", 
+            status_message = await update.message.reply_text(
+                "<i>Добавление сайта...</i>",
+                parse_mode="HTML",
                 reply_markup=self._get_menu_keyboard()
             )
-        
+            
+            output = await self.router_client.execute_command(f"kvas add {site} -y")
+            if "добавлен" in output.lower():
+                try:
+                    await status_message.edit_text(
+                        f"✅ Сайт {site} успешно добавлен.",
+                        reply_markup=self._get_menu_keyboard()
+                    )
+                except Exception as edit_error:
+                    self.logger.warning(f"Failed to edit message: {edit_error}")
+                    await update.message.reply_text(
+                        f"✅ Сайт {site} успешно добавлен.",
+                        reply_markup=self._get_menu_keyboard()
+                    )
+            else:
+                try:
+                    await status_message.edit_text(
+                        f"❌ Не удалось добавить сайт. Ответ: {output}",
+                        reply_markup=self._get_menu_keyboard()
+                    )
+                except Exception as edit_error:
+                    self.logger.warning(f"Failed to edit message: {edit_error}")
+                    await update.message.reply_text(
+                        f"❌ Не удалось добавить сайт. Ответ: {output}",
+                        reply_markup=self._get_menu_keyboard()
+                    )
+        except Exception as e:
+            self.logger.error(f"Error adding site: {e}")
+            await update.message.reply_text(
+                f"❌ Произошла ошибка: {str(e)}",
+                reply_markup=self._get_menu_keyboard()
+            )
+
         return ConversationHandler.END
 
     async def ask_delete_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -245,39 +277,62 @@ class VPNBot:
     async def delete_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Удаление сайта с расширенной валидацией."""
         if update.message.text.lower() == 'отмена':
-            await update.message.reply_text("Операция отменена.", 
-                                            reply_markup=self._get_menu_keyboard())
+            await update.message.reply_text(
+                "Операция отменена.",
+                reply_markup=self._get_menu_keyboard()
+            )
             return ConversationHandler.END
 
         site = update.message.text.strip().lower()
-        
+
         if not self._validate_domain(site):
             await update.message.reply_text(
-                "❌ Некорректный формат домена. Пример: google.com", 
+                "❌ Некорректный формат домена. Пример: google.com",
                 reply_markup=self._get_menu_keyboard()
             )
             return ConversationHandler.END
 
         try:
+            # Отправляем начальное сообщение
+            status_message = await update.message.reply_text(
+                "<i>Удаление сайта...</i>",
+                parse_mode="HTML",
+                reply_markup=self._get_menu_keyboard()
+            )
+            
+            # Выполняем команду удаления
             output = await self.router_client.execute_command(f"kvas del {site} -y")
-            if "удален" in output.lower():
-                await update.message.reply_text(
-                    f"✅ Сайт {site} успешно удален.", 
+            
+            # Определяем текст результата
+            message_text = (
+                f"✅ Сайт {site} успешно удален."
+                if "удален" in output.lower()
+                else f"❌ Не удалось удалить сайт. Ответ: {output}"
+            )
+            
+            # Пытаемся редактировать сообщение
+            try:
+                await status_message.edit_text(
+                    message_text,
                     reply_markup=self._get_menu_keyboard()
                 )
-            else:
+            except Exception as edit_error:
+                # Если редактирование не удалось, отправляем новое сообщение
+                self.logger.warning(f"Failed to edit message: {edit_error}")
                 await update.message.reply_text(
-                    f"❌ Не удалось удалить сайт. Ответ: {output}", 
+                    message_text,
                     reply_markup=self._get_menu_keyboard()
                 )
         except Exception as e:
+            # Обрабатываем общие ошибки
             self.logger.error(f"Ошибка удаления сайта: {e}")
             await update.message.reply_text(
-                f"❌ Произошла ошибка: {str(e)}", 
+                f"❌ Произошла ошибка: {str(e)}",
                 reply_markup=self._get_menu_keyboard()
             )
-        
+
         return ConversationHandler.END
+
 
     async def ask_reboot_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Вопрос на перезагрузку роутера."""
@@ -302,33 +357,30 @@ class VPNBot:
         else:
             await update.message.reply_text(text="❌ Перезагрузка отменена.", reply_markup=self._get_menu_keyboard())
         return ConversationHandler.END
+    
+    async def ask_reboot_bot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Вопрос на перезагрузку бота."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
+            return ConversationHandler.END
+        await update.message.reply_text(
+            "🤔 Вы действительно хотите перезагрузить бота?",
+            reply_markup=ReplyKeyboardMarkup([["Да", "Нет"]], resize_keyboard=True),
+        )
+        return ConversationStates.REBOOT_BOT
 
-    async def _manage_site(self, update: Update, action: str, success_message: str):
-        """Управление добавлением/удалением сайтов."""
-        site = update.message.text.strip().lower()
-        try:
-            output = await self.router_client.execute_command(f"kvas {action} {site} -y")
-            if success_message.upper() in output.upper():
-                await update.message.reply_text(f"✅ Сайт {site} успешно {success_message}.")
-            else:
-                await update.message.reply_text(f"❌ Ответ сервера: {output}")
-        except Exception as e:
-            self.logger.error(f"Ошибка управления сайтом ({action}): {e}", exc_info=True)
-            await update.message.reply_text(f"❌ Произошла ошибка: {str(e)}")
-
-    async def _rate_limit_user(self, user_id: int) -> bool:
-        """Implement rate limiting for user requests."""
-        current_time = asyncio.get_event_loop().time()
-        user_counter = self.user_request_counters.get(user_id, {'count': 0, 'time': current_time})
-        
-        # Reset counter if time elapsed
-        if current_time - user_counter['time'] > self.request_cooldown:
-            user_counter = {'count': 0, 'time': current_time}
-        
-        user_counter['count'] += 1
-        self.user_request_counters[user_id] = user_counter
-        
-        return user_counter['count'] <= self.MAX_REQUESTS_PER_MINUTE
+    async def reboot_bot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Перезагрузка роутера."""
+        if update.message.text.strip().lower() == "да":
+            try:
+                await update.message.reply_text(text="✅ Бот успешно перезагружен.", reply_markup=self._get_menu_keyboard())
+                await self.router_client.execute_command("vpnbot restart")
+            except Exception as e:
+                self.logger.error(f"Ошибка перезагрузки роутера: {e}", exc_info=True)
+                await update.message.reply_text(f"❌ Ошибка перезагрузки: {str(e)}")
+        else:
+            await update.message.reply_text(text="❌ Перезагрузка отменена.", reply_markup=self._get_menu_keyboard())
+        return ConversationHandler.END
 
     async def cancel_operation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Cancel the current operation."""
@@ -364,7 +416,8 @@ class VPNBot:
         keyboard = [
             ["📜 Список сайтов"],
             ["➕ Добавить сайт", "➖ Удалить сайт"],
-            ["🔄 Перезагрузить роутер"],
+            ["🆘 Помощь"],
+            ["🔄 Перезагрузить роутер", "🔄 Перезагрузить бота"],
         ]
         return ReplyKeyboardMarkup(
             keyboard=keyboard, 
