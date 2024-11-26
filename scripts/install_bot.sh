@@ -204,11 +204,9 @@ setup_management_script() {
         log "${GREEN}Каталог $SCRIPT_DIR добавлен в PATH.${NC}"
     fi
 
-    # Создаём /opt/vpnbot/router_bot.log
-    touch "$BOT_DIR/router_bot.log"
-
-    # Делаем /opt/vpnbot/router_bot.log доступным для чтения и записи
-    chmod 666 "$BOT_DIR/router_bot.log"
+    # Создаём лог для бота, если не существует
+    touch "$BOT_DIR/logs/router_bot.log"
+    chmod 666 "$BOT_DIR/logs/router_bot.log"
 }
 
 setup_autostart() {
@@ -251,6 +249,14 @@ setup_bot() {
     log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
     vpnbot start
     log "${GREEN}Бот успешно установлен и запущен.${NC}"
+}
+
+# Очистка ненужных файлов
+cleanup() {
+    log "${YELLOW}Удаляю временные файлы...${NC}"
+    rm -f "$BOT_DIR/deps.tar.gz"
+    rm -f "$BOT_DIR/router_bot.log"
+    log "${GREEN}Временные файлы успешно удалены.${NC}"
 }
 
 # Обработка аргументов
