@@ -297,13 +297,13 @@ class VPNBot:
         """Перезагрузка роутера."""
         if update.message.text.strip().lower() == "да":
             try:
-                await self.router_client.execute_command("system reboot")
-                await update.message.reply_text("✅ Роутер успешно перезагружен.")
+                await update.message.reply_text(text="✅ Роутер успешно перезагружен.", reply_markup=self._get_menu_keyboard())
+                await self.router_client.execute_command("reboot")
             except Exception as e:
                 self.logger.error(f"Ошибка перезагрузки роутера: {e}", exc_info=True)
                 await update.message.reply_text(f"❌ Ошибка перезагрузки: {str(e)}")
         else:
-            await update.message.reply_text("❌ Перезагрузка отменена.")
+            await update.message.reply_text(text="❌ Перезагрузка отменена.", reply_markup=self._get_menu_keyboard())
         return ConversationHandler.END
 
     async def _manage_site(self, update: Update, action: str, success_message: str):

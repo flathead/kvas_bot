@@ -173,18 +173,7 @@ create_env_file() {
         read -p "Введите ID разрешённых пользователей через запятую (ALLOWED_USERS) [обязательно]: " ALLOWED_USERS
     done
 
-    while [ -z "$ROUTER_USER" ]; do
-        read -p "Введите имя пользователя маршрутизатора (ROUTER_USER) [обязательно]: " ROUTER_USER
-    done
-
-    while [ -z "$ROUTER_PASS" ]; do
-        read -s -p "Введите пароль маршрутизатора (ROUTER_PASS) [обязательно]: " ROUTER_PASS
-        echo
-    done
-
     # Сбор дополнительных данных
-    read -p "Введите IP адрес маршрутизатора (ROUTER_IP) [опционально]: " ROUTER_IP
-    read -p "Введите порт маршрутизатора (ROUTER_PORT) [опционально]: " ROUTER_PORT
     read -p "Введите уровень логирования (LOG) [опционально, по умолчанию INFO]: " LOG_LEVEL
 
     # Установим значение по умолчанию для LOG, если пользователь его не ввел
@@ -194,11 +183,8 @@ create_env_file() {
     cat <<EOF >"$BOT_DIR/.env"
 BOT_TOKEN="$BOT_TOKEN"
 ALLOWED_USERS="$ALLOWED_USERS"
-ROUTER_IP="$ROUTER_IP"
-ROUTER_PORT="$ROUTER_PORT"
-ROUTER_USER="$ROUTER_USER"
-ROUTER_PASS="$ROUTER_PASS"
 LOG="$LOG_LEVEL"
+ENV="PROD"
 EOF
 
     log "${GREEN}.env файл успешно создан!${NC}"
@@ -217,6 +203,12 @@ setup_management_script() {
         export PATH=$PATH:$SCRIPT_DIR
         log "${GREEN}Каталог $SCRIPT_DIR добавлен в PATH.${NC}"
     fi
+
+    # Создаём /opt/vpnbot/router_bot.log
+    touch "$BOT_DIR/router_bot.log"
+
+    # Делаем /opt/vpnbot/router_bot.log доступным для чтения и записи
+    chmod 666 "$BOT_DIR/router_bot.log"
 }
 
 setup_autostart() {

@@ -9,10 +9,11 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Параметры
-BOT_DIR="/apps/vpnbot"
+BOT_DIR="/opt/vpnbot"
 VENV_DIR="$BOT_DIR/venv"
-DAEMON_SCRIPT="/usr/local/bin/vpnbot_daemon"
+BOT_SCRIPT="$BOT_DIR/main.py"
 PID_FILE="/var/run/vpnbot.pid"
+LOG_FILE="/var/log/vpnbot.log"
 
 # Заголовок
 print_header() {
@@ -54,7 +55,8 @@ start_bot() {
     fi
 
     echo -e "${YELLOW}Запускаю бота...${NC}"
-    $DAEMON_SCRIPT
+    daemonize -p "$PID_FILE" -o "$LOG_FILE" -e "$LOG_FILE" \
+        "$VENV_DIR/bin/python" "$BOT_SCRIPT"
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Бот успешно запущен!${NC}"
     else
@@ -91,9 +93,7 @@ upgrade_bot() {
     cd "$BOT_DIR" || exit 1
     git pull
     echo -e "${YELLOW}Устанавливаю обновлённые зависимости...${NC}"
-    source "$VENV_DIR/bin/activate"
-    pip install --upgrade -r requirements.txt
-    deactivate
+    "$VENV_DIR/bin/pip" install --upgrade -r "$BOT_DIR/requirements.txt"
     restart_bot
     echo -e "${GREEN}Бот успешно обновлён и перезапущен!${NC}"
 }
