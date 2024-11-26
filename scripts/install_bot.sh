@@ -241,6 +241,17 @@ show_help() {
     echo "  help, --help                 Показать эту справочную информацию"
 }
 
+# Очистка ненужных файлов
+cleanup() {
+    log "${YELLOW}Удаляю временные файлы...${NC}"
+    rm -f "$BOT_DIR/deps.tar.gz"
+    rm -rf "$BOT_DIR/scripts/install_bot.sh"
+    rm -rf "$BOT_DIR/requirements.txt"
+    rm -rf "$BOT_DIR/README.md"
+    rm -rf "$BOT_DIR/README.md"
+    log "${GREEN}Временные файлы успешно удалены.${NC}"
+}
+
 # Основная установка
 setup_bot() {
     log "${CYAN}Запуск установки VPN-бота...${NC}"
@@ -251,18 +262,13 @@ setup_bot() {
     create_env_file
     setup_management_script
     setup_autostart
+    log "${YELLOW}Удаляю временные файлы...${NC}"
+    cleanup
     log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
     vpnbot start
     log "${GREEN}Бот успешно установлен и запущен.${NC}"
 }
 
-# Очистка ненужных файлов
-cleanup() {
-    log "${YELLOW}Удаляю временные файлы...${NC}"
-    rm -f "$BOT_DIR/deps.tar.gz"
-    rm -f "$BOT_DIR/router_bot.log"
-    log "${GREEN}Временные файлы успешно удалены.${NC}"
-}
 
 # Обработка аргументов
 case "$1" in
@@ -286,6 +292,9 @@ case "$1" in
         ;;
     "setup_autostart")
         setup_autostart
+        ;;
+    "cleanup")
+        cleanup
         ;;
     "setup_bot" | "install" | "--setup" | "--install" | "")
         setup_bot
