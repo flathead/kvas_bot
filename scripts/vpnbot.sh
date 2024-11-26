@@ -32,10 +32,14 @@ print_help() {
     echo -e "  ${GREEN}stop${NC}      - Останавливает бота"
     echo -e "  ${GREEN}restart${NC}   - Перезапускает бота"
     echo -e "  ${GREEN}upgrade${NC}   - Обновляет репозиторий и перезапускает бота"
+    echo -e "  ${GREEN}logs${NC}      - Показывает логи бота"
+    echo -e "  ${GREEN}clear${NC}     - Очищает логи бота"
     echo -e "  ${GREEN}help${NC}      - Показывает это сообщение"
     echo -e ""
     echo -e "${YELLOW}Аргументы:${NC}"
-    echo -e "  ${GREEN}-h, --help${NC} - Показывает это сообщение"
+    echo -e "  ${GREEN}-h, --help${NC}  - Показывает это сообщение"
+    echo -e "  ${GREEN}-l, --log${NC}   - Показывает логи бота"
+    echo -e "  ${GREEN}-c, --clear${NC} - Очищает логи бота"
 }
 
 # Проверка запущенного процесса
@@ -55,8 +59,7 @@ start_bot() {
     fi
 
     echo -e "${YELLOW}Запускаю бота...${NC}"
-    daemonize -p "$PID_FILE" -o "$LOG_FILE" -e "$LOG_FILE" \
-        "$VENV_DIR/bin/python" "$BOT_SCRIPT"
+    daemonize -p "$PID_FILE" -o "$LOG_FILE" -e "$LOG_FILE" "$VENV_DIR/bin/python" "$BOT_SCRIPT"
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Бот успешно запущен!${NC}"
     else
@@ -101,6 +104,12 @@ show_logs() {
     tail -f "$LOG_FILE"
 }
 
+# Очистка log-файла
+clear_logs() {
+    echo -e "${YELLOW}Очищаю логи...${NC}"
+    echo "" >"$LOG_FILE"
+}
+
 # Основная логика
 case "$1" in
 start)
@@ -117,6 +126,9 @@ upgrade)
     ;;
 logs | --log | -l)
     show_logs
+    ;;
+clear | --clear | -c)
+    clear_logs
     ;;
 help | -h | --help | "")
     print_help

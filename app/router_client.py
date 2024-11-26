@@ -1,6 +1,4 @@
 import asyncio
-import subprocess
-from typing import Optional
 from app.config import Config
 from app.logger import get_logger
 

@@ -1,13 +1,10 @@
 import re
-import logging
 import asyncio
-import signal
 from typing import Optional
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, 
-    ApplicationBuilder,
     CommandHandler, 
     MessageHandler, 
     ConversationHandler, 
