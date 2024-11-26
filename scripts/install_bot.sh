@@ -9,7 +9,7 @@ BOLD='\033[1m'
 NC='\033[0m' # Сброс цвета
 
 # Константы
-BOT_DIR="/opt/vpnbot"
+BOT_DIR="/opt/apps/vpnbot"
 VENV_DIR="$BOT_DIR/venv"
 REPO_OWNER="flathead"
 REPO_NAME="kvas_bot"

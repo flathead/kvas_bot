@@ -13,7 +13,7 @@ level = getattr(logging, log_level, logging.INFO)
 env = os.getenv('ENV')
 
 if env and env.upper() == 'PROD':
-    file_handler = logging.FileHandler('/opt/vpnbot/logs/router_bot.log')
+    file_handler = logging.FileHandler('/opt/apps/vpnbot/logs/router_bot.log')
 elif env and env.upper() == 'DEV':
     file_handler = logging.FileHandler('./router_bot.log')
 else:
@@ -23,7 +23,7 @@ logging.basicConfig(
     level=level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        env and env.upper() == 'PROD' and logging.FileHandler('/opt/vpnbot/logs/router_bot.log') or env and env.upper() == 'DEV' and logging.FileHandler('./router_bot.log'),
+        file_handler,
         logging.StreamHandler()
     ]
 )
