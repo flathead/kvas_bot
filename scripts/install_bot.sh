@@ -238,6 +238,21 @@ show_help() {
     echo "  help, --help                 Показать эту справочную информацию"
 }
 
+# Основная установка
+setup_bot() {
+    log "${CYAN}Запуск установки VPN-бота...${NC}"
+    install_dependencies
+    download_and_extract_release
+    create_virtualenv
+    install_requirements
+    create_env_file
+    setup_management_script
+    setup_autostart
+    log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
+    "$SCRIPT_PATH" start
+    log "${GREEN}Бот успешно установлен и запущен.${NC}"
+}
+
 # Обработка аргументов
 case "$1" in
     "install_dependencies")
