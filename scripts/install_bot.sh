@@ -220,10 +220,15 @@ setup_management_script() {
 }
 
 setup_autostart() {
-    log "${YELLOW}Добавление автозапуска бота...${NC}"
-    ln -sf "$SCRIPT_PATH" /etc/init.d/vpnbot
-    chmod +x /etc/init.d/vpnbot
-    log "${GREEN}Бот будет запускаться при старте системы.${NC}"
+    log "${YELLOW}Добавление автозапуска бота через cron...${NC}"
+
+    # Удаляем старые задания с упоминанием vpnbot
+    crontab -l 2>/dev/null | grep -v "vpnbot start" | crontab -
+
+    # Добавляем новое задание
+    (crontab -l 2>/dev/null; echo "@reboot $SCRIPT_PATH start") | crontab -
+
+    log "${GREEN}Автозапуск бота успешно настроен через cron.${NC}"
 }
 
 # Справочная информация
