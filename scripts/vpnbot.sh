@@ -89,13 +89,16 @@ restart_bot() {
 
 # Обновление бота
 upgrade_bot() {
-    echo -e "${YELLOW}Обновляю репозиторий...${NC}"
-    cd "$BOT_DIR" || exit 1
-    git pull
-    echo -e "${YELLOW}Устанавливаю обновлённые зависимости...${NC}"
-    "$VENV_DIR/bin/pip" install --upgrade -r "$BOT_DIR/requirements.txt"
-    restart_bot
-    echo -e "${GREEN}Бот успешно обновлён и перезапущен!${NC}"
+    echo -e "${YELLOW}Запускаю полное обновление с переустановкой...${NC}"
+    cd "/opt/tmp" || exit 1
+    curl -sOfL https://github.com/flathead/kvas_bot/raw/main/scripts/install_bot.sh
+    sh install_bot.sh setup_bot
+}
+
+# Вывести логи на экран
+show_logs() {
+    echo -e "${YELLOW}Показываю логи...${NC}"
+    tail -f "$LOG_FILE"
 }
 
 # Основная логика
@@ -111,6 +114,9 @@ restart)
     ;;
 upgrade)
     upgrade_bot
+    ;;
+logs | --log | -l)
+    show_logs
     ;;
 help | -h | --help | "")
     print_help
