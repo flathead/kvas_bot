@@ -1,5 +1,7 @@
 import asyncio
+import os
 import signal
+from dotenv import load_dotenv
 
 from app.bot import VPNBot
 from app.config import Config
@@ -19,8 +21,12 @@ async def main():
     
     # Настройка обработки сигналов
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: bot_task.cancel())
+
+    load_dotenv()
+    env = os.getenv('ENV')
+    if env and env.upper() == 'PROD':
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda: bot_task.cancel())
     
     try:
         await bot_task
