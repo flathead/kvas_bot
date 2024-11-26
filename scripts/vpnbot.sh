@@ -94,7 +94,13 @@ restart_bot() {
 upgrade_bot() {
     echo -e "${YELLOW}Запускаю полное обновление с переустановкой...${NC}"
     cd "/opt/tmp" || exit 1
+    echo -e "${YELLOW}Удаляю старую версию бота...${NC}"
+    rm -rf "$BOT_DIR"
+    rm -rf "install_bot.sh"
+    echo -e "${GREEN}Удалено...${NC}"
+    echo -e "${YELLOW}Получаю последнюю версию...${NC}"
     curl -sOfL https://github.com/flathead/kvas_bot/raw/main/scripts/install_bot.sh
+    echo -e "${GREEN}Получено, запускаю установку...${NC}"
     sh install_bot.sh setup_bot
 }
 
