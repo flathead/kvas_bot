@@ -1,8 +1,8 @@
-aiogram==3.15.0
+python-telegram-bot==20.7
 asyncio==3.4.3
 python-dotenv==1.0.1
 setuptools==75.6.0
 wheel==0.45.0
 
-# pip download -r requirements.txt -d deps --only-binary=:all:
+# pip download -r requirements.txt -d deps --platform=manylinux1_x86_64 --only-binary=:all:
 # tar -czvf deps.tar.gz deps

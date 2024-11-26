@@ -1,304 +1,376 @@
-import asyncio
-import html
-import logging
 import re
-from aiogram import F, Bot, Dispatcher, Router
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
+import logging
+import asyncio
+import signal
+from typing import Optional
+
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    Application, 
+    ApplicationBuilder,
+    CommandHandler, 
+    MessageHandler, 
+    ConversationHandler, 
+    ContextTypes, 
+    filters,
+)
+
 from app.config import Config
 from app.formatter import OutputFormatter
-from app.states import AddSiteState, DeleteSiteState, RebootRouterState
 from app.messages import MESSAGES
 from app.router_client import RouterLocalClient
 from app.logger import get_logger
+
+# Enum-like states for clearer state management
+class ConversationStates:
+    ADD_SITE = 0
+    DELETE_SITE = 1
+    REBOOT_ROUTER = 2
 
 class VPNBot:
     def __init__(self, config: Config, router_client: RouterLocalClient):
         self.config = config
         self.router_client = router_client
-        self.bot = Bot(token=config.BOT_TOKEN)
-        self.storage = MemoryStorage()
-        self.dp = Dispatcher(storage=self.storage)
-        self.router = Router()
         self.output_formatter = OutputFormatter()
         self.logger = get_logger(__name__)
-        self._setup_handlers()
+        
+        self.application: Optional[Application] = None
+        
+        # Усовершенствованное ограничение запросов
+        self.user_request_counters = {}
+        self.MAX_REQUESTS_PER_MINUTE = 10
+        self.request_cooldown = 60  # секунд
 
-    def _setup_handlers(self):
-        self.router.message.register(self.cmd_start, Command("start"))
-        self.router.message.register(self.test_connection, Command("test"))
-        self.router.message.register(
-            self.list_sites, F.text == "📜 Список сайтов"
-        )
-        self.router.message.register(
-            self.ask_add_site, F.text == "➕ Добавить сайт"
-        )
-        self.router.message.register(
-            self.add_site, AddSiteState.waiting_for_site_name
-        )
-        self.router.message.register(
-            self.ask_delete_site, F.text == "➖ Удалить сайт"
-        )
-        self.router.message.register(
-            self.delete_site, DeleteSiteState.waiting_for_site_name
-        )
-        self.router.message.register(
-            self.ask_reboot_router, F.text == "🔄 Перезагрузить роутер"
-        )
-        self.router.message.register(
-            self.reboot_router, RebootRouterState.waiting_for_confirmation
-        )
+    async def initialize(self):
+        """Initialize the bot application."""
+        try:
+            # Create application
+            self.application = (
+                Application.builder()
+                .token(self.config.BOT_TOKEN)
+                .build()
+            )
+            
+            # Register handlers
+            self._register_handlers()
+            
+            return self
+        except Exception as e:
+            self.logger.critical(f"Bot initialization failed: {e}", exc_info=True)
+            raise
 
-    async def cmd_start(self, message: Message):
-        """Обработчик команды /start."""
-        if not await self._is_user_allowed(message.from_user.id):
-            await message.answer(MESSAGES['access_denied'])
+    def _register_handlers(self):
+        """Регистрация обработчиков с улучшенной безопасностью."""
+        if not self.application:
             return
-        await message.answer(
+
+        # Создание расширенного ConversationHandler
+        conversation_handler = ConversationHandler(
+            entry_points=[
+                MessageHandler(filters.Regex(r"➕ Добавить сайт"), self.ask_add_site),
+                MessageHandler(filters.Regex(r"➖ Удалить сайт"), self.ask_delete_site),
+                MessageHandler(filters.Regex(r"🔄 Перезагрузить роутер"), self.ask_reboot_router),
+            ],
+            states={
+                ConversationStates.ADD_SITE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_site)
+                ],
+                ConversationStates.DELETE_SITE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.delete_site)
+                ],
+                ConversationStates.REBOOT_ROUTER: [
+                    MessageHandler(filters.Regex(r"^(Да|Нет)$"), self.reboot_router)
+                ],
+            },
+            fallbacks=[CommandHandler('cancel', self.cancel_operation)],
+            allow_reentry=True
+        )
+
+        # Главные обработчики
+        handlers = [
+            CommandHandler("start", self.cmd_start),
+            MessageHandler(filters.Regex(r"📜 Список сайтов"), self.list_sites),
+        ]
+
+        # Добавление обработчиков
+        for handler in handlers:
+            self.application.add_handler(handler)
+        self.application.add_handler(conversation_handler)
+
+    async def start(self):
+        """Start bot with comprehensive error handling."""
+        try:
+            # Инициализируем приложение только один раз, если оно еще не создано
+            if not self.application:
+                await self.initialize()
+
+            # Проверка и остановка текущего updater, если он запущен
+            if self.application.updater.running:
+                try:
+                    await self.application.updater.stop()
+                except Exception as stop_error:
+                    self.logger.warning(f"Error stopping existing updater: {stop_error}")
+
+            # Удаление вебхука
+            await self.application.bot.delete_webhook(drop_pending_updates=True)
+            
+            # Инициализация приложения
+            await self.application.initialize()
+            await self.application.start()
+            
+            # Запуск polling
+            await self.application.updater.start_polling(
+                poll_interval=1.0,   
+                timeout=20,           
+                drop_pending_updates=True  
+            )
+
+            # Бесконечный цикл
+            while True:
+                await asyncio.sleep(3600)  # Периодическая проверка каждый час
+
+        except asyncio.CancelledError:
+            self.logger.info("Bot polling was cancelled")
+        except Exception as e:
+            self.logger.critical(f"Bot startup failed: {str(e)}", exc_info=True)
+        finally:
+            # Безопасная остановка
+            try:
+                if self.application and self.application.updater.running:
+                    await self.application.updater.stop()
+                if self.application and self.application.running:
+                    await self.application.stop()
+                    await self.application.shutdown()
+            except Exception as shutdown_error:
+                self.logger.error(f"Error during shutdown: {shutdown_error}")
+
+    async def _post_init(self, application: Application):
+        """Post-initialization setup."""
+        self.logger.info("Bot initialization complete.")
+        self._register_handlers()
+
+    async def _post_shutdown(self, application: Application):
+        """Cleanup after bot shutdown."""
+        self.logger.info("Bot shutdown complete.")
+
+    async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start command handler."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
+            return
+        
+        # Debugging print
+        self.logger.info(f"Start command received from user {update.effective_user.id}")
+        
+        await update.message.reply_text(
             MESSAGES['start'], 
             reply_markup=self._get_menu_keyboard(), 
             parse_mode="HTML"
         )
 
-    async def test_connection(self, message: Message):
-        """Тестовая команда /test для проверки возможности выполнения команд."""
-        try:
-            # Выполняем тестовую команду
-            await self.router_client.execute_command("pwd")
-            await message.answer("🟢 Тест успешен: команды роутера доступны.")
-        except Exception as e:
-            self.logger.error(f"Ошибка выполнения команды: {e}")
-            await message.answer("🔴 Тест неудачен: не удалось выполнить команду.")
-
-    async def _is_user_allowed(self, user_id: int) -> bool:
-        return user_id in self.config.ALLOWED_USERS
-
-    def _get_menu_keyboard(self) -> ReplyKeyboardMarkup:
-        keyboard = [
-            [KeyboardButton(text="📜 Список сайтов")],
-            [
-                KeyboardButton(text="➕ Добавить сайт"), 
-                KeyboardButton(text="➖ Удалить сайт")
-            ],
-            [KeyboardButton(text="🔄 Перезагрузить роутер")]
-        ]
-        return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-    async def list_sites(self, message: Message):
-        if not await self._is_user_allowed(message.from_user.id):
-            await message.answer(MESSAGES['access_denied'])
+    async def list_sites(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Вывод списка заблокированных сайтов."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
             return
         try:
-            # Используем await для execute_command
             sites_raw = await self.router_client.execute_command("kvas list")
             sites_formatted = self.output_formatter.clean_terminal_output(sites_raw)
-            
-            if not sites_formatted:
-                self.logger.warning("Получен пустой список сайтов")
-                await message.answer(MESSAGES['site_list_empty'])
-                return
-            
-            await message.answer(
-                text=f"📋 Список заблокированных сайтов:\n\n{sites_formatted}", 
-                parse_mode="HTML"
+            await update.message.reply_text(
+                f"📋 Список заблокированных сайтов:\n\n{sites_formatted or MESSAGES['site_list_empty']}",
+                parse_mode="HTML",
             )
         except Exception as e:
-            self.logger.error(f"Полная ошибка списка сайтов: {e}", exc_info=True)
-            await message.answer("❌ Не удалось получить список: Проверьте настройки")
+            self.logger.error(f"Ошибка получения списка сайтов: {e}", exc_info=True)
+            await update.message.reply_text("❌ Не удалось получить список сайтов.")
 
-    async def ask_add_site(self, message: Message, state: FSMContext):
-        if not await self._is_user_allowed(message.from_user.id):
-            await message.answer(MESSAGES['access_denied'])
-            return
-        await message.answer(MESSAGES['site_add_prompt'])
-        await state.set_state(AddSiteState.waiting_for_site_name)
+    async def ask_add_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Запрос на добавление сайта с улучшенной обработкой."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
+            return ConversationHandler.END
 
-    async def add_site(self, message: Message, state: FSMContext):
-        site = message.text.strip().lower()
-        if not self._validate_domain(site):
-            await message.answer(
-                "❌ Некорректный формат домена. Пожалуйста, введите корректное доменное имя (например: example.com)", 
-                parse_mode="HTML"
-            )
-            await state.clear()
-            return
-
-        status_message = await message.answer(
-            text=f"⌛️ Добавление сайта: {site}...\n\n" 
-                 f"<i>Процедура может занять от 15 до 40 секунд, наберитесь терпения.</i>", 
-            parse_mode="HTML"
+        await update.message.reply_text(
+            MESSAGES['site_add_prompt'], 
+            reply_markup=ReplyKeyboardMarkup([['Отмена']], resize_keyboard=True)
         )
+        return ConversationStates.ADD_SITE
+
+    async def add_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Добавление сайта с расширенной валидацией."""
+        if update.message.text.lower() == 'отмена':
+            await update.message.reply_text("Операция отменена.", 
+                                            reply_markup=self._get_menu_keyboard())
+            return ConversationHandler.END
+
+        site = update.message.text.strip().lower()
+        
+        if not self._validate_domain(site):
+            await update.message.reply_text(
+                "❌ Некорректный формат домена. Пример: google.com", 
+                reply_markup=self._get_menu_keyboard()
+            )
+            return ConversationHandler.END
 
         try:
-            # Используем await для execute_command
-            raw_output = await self.router_client.execute_command(
-                f"kvas add {site} -y", timeout=60
-            )
-            
-            if "ДОБАВЛЕН" in raw_output:
-                await status_message.edit_text(
-                    f"✅ Сайт <i>{site}</i> успешно добавлен в список разблокировки.", 
-                    parse_mode="HTML"
-                )
-            else:
-                error_msg = f"❌ Не удалось добавить сайт. Ответ сервера:\n<pre>{raw_output[:200]}</pre>"
-                await status_message.edit_text(error_msg, parse_mode="HTML")
-                self.logger.error(f"Ошибка при добавлении {site}: {raw_output}")
-        
-        except asyncio.TimeoutError:
-            await status_message.edit_text(
-                f"⚠️ Превышено время ожидания при добавлении сайта {site}. Попробуйте позже.", 
-                parse_mode="HTML"
-            )
-        
-        except Exception as e:
-            await status_message.edit_text(
-                f"❌ Произошла ошибка при добавлении сайта:\n<pre>{str(e)[:200]}</pre>", 
-                parse_mode="HTML"
-            )
-            self.logger.error(f"Исключение при добавлении сайта {site}: {str(e)}", exc_info=True)
-        
-        finally:
-            await state.clear()
-
-    async def ask_delete_site(self, message: Message, state: FSMContext):
-        if not await self._is_user_allowed(message.from_user.id):
-            await message.answer(MESSAGES['access_denied'])
-            return
-        await state.clear()
-        await message.answer(MESSAGES['site_delete_prompt'])
-        await state.set_state(DeleteSiteState.waiting_for_site_name)
-
-    async def delete_site(self, message: Message, state: FSMContext):
-        site = message.text.strip().lower()
-        current_state = await state.get_state()
-        
-        if current_state != DeleteSiteState.waiting_for_site_name.state:
-            self.logger.warning("Попытка обработки вне состояния удаления")
-            await message.answer("⚠️ Процесс удаления был прерван. Попробуйте начать заново.")
-            return
-
-        if not self._validate_domain(site):
-            await message.answer(
-                "❌ Некорректный формат домена. Введите корректное доменное имя, например: example.com", 
-                parse_mode="HTML"
-            )
-            return
-
-        status_message = await message.answer(
-            text=f"⌛ Удаление сайта: {site}...\n\n" 
-                 f"<i>Это может занять некоторое время.</i>", 
-            parse_mode="HTML"
-        )
-
-        try:
-            # Используем await для execute_command
-            raw_output = await self.router_client.execute_command(
-                f"kvas del {site} -y", timeout=30
-            )
-            
-            if "УДАЛЕН" in raw_output:
-                await status_message.edit_text(
-                    f"✅ Сайт <i>{site}</i> успешно удален из списка.", 
-                    parse_mode="HTML"
-                )
-            elif "Такая запись отсутствует в списке разблокировки!" in raw_output:
-                await status_message.edit_text(
-                    f"ℹ️ Сайт <i>{site}</i> отсутствует в списке.", 
-                    parse_mode="HTML"
-                )
-            else:
-                await status_message.edit_text(
-                    f"❌ Ошибка удаления. Ответ сервера:\n<pre>{raw_output[:200]}</pre>", 
-                    parse_mode="HTML"
-                )
-        
-        except Exception as e:
-            self.logger.error(f"Ошибка удаления сайта {site}: {e}", exc_info=True)
-            await status_message.edit_text(
-                f"❌ Произошла ошибка при удалении: <pre>{html.escape(str(e))}</pre>", 
-                parse_mode="HTML"
-            )
-        
-        finally:
-            await state.clear()
-
-    async def ask_reboot_router(self, message: Message, state: FSMContext):
-        if not await self._is_user_allowed(message.from_user.id):
-            await message.answer(MESSAGES['access_denied'])
-            return
-        await state.clear()
-        await message.answer(
-            f"🤔 Вы действительно хотите перезагрузить роутер?", 
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[ 
-                    [ 
-                        KeyboardButton(text="Да"), 
-                        KeyboardButton(text="Нет") 
-                    ], 
-                ], 
-                resize_keyboard=True
-            )
-        )
-        await state.set_state(RebootRouterState.waiting_for_confirmation)
-
-    async def reboot_router(self, message: Message, state: FSMContext):
-        answer = message.text.strip().lower()
-        current_state = await state.get_state()
-        
-        if current_state != RebootRouterState.waiting_for_confirmation.state:
-            self.logger.warning("Попытка обработки вне состояния удаления")
-            await message.answer("⚠️ Процесс перезагрузки был прерван. Попробуйте начать заново.")
-            return
-
-        if answer == "да":
-            reboot = True
-        elif answer == "нет":
-            reboot = False
-        else:
-            await message.answer("❌ Некорректный ответ. Пожалуйста, введите 'Да' или 'Нет'.")
-            return
-
-        if reboot:
-            try:
-                # Используем await для execute_command
-                await self.router_client.execute_command("system reboot", timeout=10)
-                await message.answer(
-                    "✅ Роутер успешно перезагружен.", 
+            output = await self.router_client.execute_command(f"kvas add {site} -y")
+            if "добавлен" in output.lower():
+                await update.message.reply_text(
+                    f"✅ Сайт {site} успешно добавлен.", 
                     reply_markup=self._get_menu_keyboard()
                 )
-            except Exception as e:
-                self.logger.error(f"Ошибка перезагрузки роутера: {e}", exc_info=True)
-                await message.answer("❌ Произошла ошибка при перезагрузке роутера.")
-        else:
-            await message.answer(
-                "❌ Роутер не перезагружен.", 
+            else:
+                await update.message.reply_text(
+                    f"❌ Не удалось добавить сайт. Ответ: {output}", 
+                    reply_markup=self._get_menu_keyboard()
+                )
+        except Exception as e:
+            self.logger.error(f"Ошибка добавления сайта: {e}")
+            await update.message.reply_text(
+                f"❌ Произошла ошибка: {str(e)}", 
                 reply_markup=self._get_menu_keyboard()
             )
         
-        await state.clear()
+        return ConversationHandler.END
+
+    async def ask_delete_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Запрос на удаление сайта."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
+            return ConversationHandler.END
+
+        await update.message.reply_text(
+            MESSAGES['site_delete_prompt'], 
+            reply_markup=ReplyKeyboardMarkup([['Отмена']], resize_keyboard=True)
+        )
+        return ConversationStates.DELETE_SITE
+
+    async def delete_site(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Удаление сайта с расширенной валидацией."""
+        if update.message.text.lower() == 'отмена':
+            await update.message.reply_text("Операция отменена.", 
+                                            reply_markup=self._get_menu_keyboard())
+            return ConversationHandler.END
+
+        site = update.message.text.strip().lower()
+        
+        if not self._validate_domain(site):
+            await update.message.reply_text(
+                "❌ Некорректный формат домена. Пример: google.com", 
+                reply_markup=self._get_menu_keyboard()
+            )
+            return ConversationHandler.END
+
+        try:
+            output = await self.router_client.execute_command(f"kvas del {site} -y")
+            if "удален" in output.lower():
+                await update.message.reply_text(
+                    f"✅ Сайт {site} успешно удален.", 
+                    reply_markup=self._get_menu_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ Не удалось удалить сайт. Ответ: {output}", 
+                    reply_markup=self._get_menu_keyboard()
+                )
+        except Exception as e:
+            self.logger.error(f"Ошибка удаления сайта: {e}")
+            await update.message.reply_text(
+                f"❌ Произошла ошибка: {str(e)}", 
+                reply_markup=self._get_menu_keyboard()
+            )
+        
+        return ConversationHandler.END
+
+    async def ask_reboot_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Вопрос на перезагрузку роутера."""
+        if not await self._is_user_allowed(update.effective_user.id):
+            await update.message.reply_text(MESSAGES['access_denied'])
+            return ConversationHandler.END
+        await update.message.reply_text(
+            "🤔 Вы действительно хотите перезагрузить роутер?",
+            reply_markup=ReplyKeyboardMarkup([["Да", "Нет"]], resize_keyboard=True),
+        )
+        return ConversationStates.REBOOT_ROUTER
+
+    async def reboot_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Перезагрузка роутера."""
+        if update.message.text.strip().lower() == "да":
+            try:
+                await self.router_client.execute_command("system reboot")
+                await update.message.reply_text("✅ Роутер успешно перезагружен.")
+            except Exception as e:
+                self.logger.error(f"Ошибка перезагрузки роутера: {e}", exc_info=True)
+                await update.message.reply_text(f"❌ Ошибка перезагрузки: {str(e)}")
+        else:
+            await update.message.reply_text("❌ Перезагрузка отменена.")
+        return ConversationHandler.END
+
+    async def _manage_site(self, update: Update, action: str, success_message: str):
+        """Управление добавлением/удалением сайтов."""
+        site = update.message.text.strip().lower()
+        try:
+            output = await self.router_client.execute_command(f"kvas {action} {site} -y")
+            if success_message.upper() in output.upper():
+                await update.message.reply_text(f"✅ Сайт {site} успешно {success_message}.")
+            else:
+                await update.message.reply_text(f"❌ Ответ сервера: {output}")
+        except Exception as e:
+            self.logger.error(f"Ошибка управления сайтом ({action}): {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Произошла ошибка: {str(e)}")
+
+    async def _rate_limit_user(self, user_id: int) -> bool:
+        """Implement rate limiting for user requests."""
+        current_time = asyncio.get_event_loop().time()
+        user_counter = self.user_request_counters.get(user_id, {'count': 0, 'time': current_time})
+        
+        # Reset counter if time elapsed
+        if current_time - user_counter['time'] > self.request_cooldown:
+            user_counter = {'count': 0, 'time': current_time}
+        
+        user_counter['count'] += 1
+        self.user_request_counters[user_id] = user_counter
+        
+        return user_counter['count'] <= self.MAX_REQUESTS_PER_MINUTE
+
+    async def cancel_operation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel the current operation."""
+        await update.message.reply_text("Операция отменена.")
+        return ConversationHandler.END
+
+    # ... (rest of the methods remain the same as in the previous implementation)
 
     def _validate_domain(self, domain: str) -> bool:
-        """Проверка корректности доменного имени."""
-        domain_pattern = re.compile(
-            r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-        )
-        return bool(domain_pattern.match(domain))
+        """Enhanced domain validation."""
+        if not domain or len(domain) > 255:
+            return False
+        
+        # More comprehensive domain validation
+        domain_regex = r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$'
+        return bool(re.match(domain_regex, domain, re.IGNORECASE))
 
-    async def start(self):
-        try:
-            # Отключаем логирование aiogram
-            aiogram_logger = get_logger('aiogram.dispatcher')
-            aiogram_logger.setLevel(logging.CRITICAL)
-            
-            await self.bot.delete_webhook(drop_pending_updates=True)
-            self.dp.include_router(self.router)
-            await self.dp.start_polling(self.bot, polling_timeout=30)
+    async def _is_user_allowed(self, user_id: int) -> bool:
+        """Enhanced user access control."""
+        # Debugging print
+        self.logger.info(f"Checking access for user {user_id}")
         
-        except Exception as e:
-            self.logger.critical(f"Критическая ошибка бота: {e}")
+        # Check if user is in allowed list
+        is_allowed = user_id in self.config.ALLOWED_USERS
         
-        finally:
-            await self.bot.session.close()
+        if not is_allowed:
+            self.logger.warning(f"Access denied for user {user_id}")
+        
+        return is_allowed
+
+    def _get_menu_keyboard(self) -> ReplyKeyboardMarkup:
+        """Create menu keyboard."""
+        keyboard = [
+            ["📜 Список сайтов"],
+            ["➕ Добавить сайт", "➖ Удалить сайт"],
+            ["🔄 Перезагрузить роутер"],
+        ]
+        return ReplyKeyboardMarkup(
+            keyboard=keyboard, 
+            resize_keyboard=True, 
+            one_time_keyboard=False
+        )
