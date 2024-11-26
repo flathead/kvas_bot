@@ -276,7 +276,7 @@ case "$1" in
     "setup_autostart")
         setup_autostart
         ;;
-    "setup_bot" | "")
+    "setup_bot" | "install" | "--setup" | "--install" | "")
         setup_bot
         ;;
     "help" | "--help")
