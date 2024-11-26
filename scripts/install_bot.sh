@@ -219,6 +219,11 @@ setup_autostart() {
     (crontab -l 2>/dev/null; echo "@reboot $SCRIPT_PATH start") | crontab -
 
     log "${GREEN}Автозапуск бота успешно настроен через cron.${NC}"
+
+    # Добавляем в cron команду на ежедневную очистку логов в 2 утра
+    (crontab -l 2>/dev/null; echo "0 2 * * * vpnbot clear") | crontab -
+
+    log "${GREEN}Ежедневная очистка логов бота успешно настроена через cron.${NC}"
 }
 
 # Справочная информация
