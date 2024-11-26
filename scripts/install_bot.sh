@@ -248,7 +248,6 @@ cleanup() {
     rm -rf "$BOT_DIR/scripts/install_bot.sh"
     rm -rf "$BOT_DIR/requirements.txt"
     rm -rf "$BOT_DIR/README.md"
-    rm -rf "$BOT_DIR/README.md"
     log "${GREEN}Временные файлы успешно удалены.${NC}"
 }
 
