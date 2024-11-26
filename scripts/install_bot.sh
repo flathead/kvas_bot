@@ -13,7 +13,9 @@ BOT_DIR="/opt/vpnbot"
 VENV_DIR="$BOT_DIR/venv"
 REPO_OWNER="flathead"
 REPO_NAME="kvas_bot"
-SCRIPT_PATH="/usr/local/bin/vpnbot"
+SCRIPT_DIR="/opt/bin"
+mkdir -p "$SCRIPT_DIR"
+SCRIPT_PATH="$SCRIPT_DIR/vpnbot"
 LOG_FILE="/var/log/vpnbot_install.log"
 PYTHON_DEPS="aiogram asyncio python-dotenv setuptools wheel"
 
@@ -205,24 +207,72 @@ EOF
 # Создание скрипта управления
 setup_management_script() {
     log "${YELLOW}Добавление скрипта управления vpnbot...${NC}"
+    mkdir -p "$(dirname "$SCRIPT_PATH")"
     ln -sf "$BOT_DIR/scripts/vpnbot.sh" "$SCRIPT_PATH"
     chmod +x "$BOT_DIR/scripts/vpnbot.sh"
     log "${GREEN}Скрипт управления установлен! Используйте 'vpnbot' для управления.${NC}"
+
+    if ! echo "$PATH" | grep -q "$SCRIPT_DIR"; then
+        echo "export PATH=\$PATH:$SCRIPT_DIR" >> /etc/profile
+        export PATH=$PATH:$SCRIPT_DIR
+        log "${GREEN}Каталог $SCRIPT_DIR добавлен в PATH.${NC}"
+    fi
 }
 
-# Основная установка
-setup_bot() {
-    log "${CYAN}Запуск установки VPN-бота...${NC}"
-    install_dependencies
-    download_and_extract_release
-    create_virtualenv
-    install_requirements
-    create_env_file
-    setup_management_script
-    log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
-    "$SCRIPT_PATH" start
-    log "${GREEN}Бот успешно установлен и запущен.${NC}"
+setup_autostart() {
+    log "${YELLOW}Добавление автозапуска бота...${NC}"
+    ln -sf "$SCRIPT_PATH" /etc/init.d/vpnbot
+    chmod +x /etc/init.d/vpnbot
+    log "${GREEN}Бот будет запускаться при старте системы.${NC}"
 }
 
-# Запуск установки
-setup_bot
+# Справочная информация
+show_help() {
+    echo -e "${CYAN}${BOLD}Использование:${NC} ./install_bot.sh [команда]"
+    echo -e "${CYAN}${BOLD}Доступные команды:${NC}"
+    echo "  install_dependencies         Установить системные зависимости"
+    echo "  download_and_extract_release Скачать и распаковать последнюю версию бота"
+    echo "  create_virtualenv            Создать виртуальную среду Python"
+    echo "  install_requirements         Установить Python-зависимости из локального архива"
+    echo "  create_env_file              Создать файл конфигурации (.env)"
+    echo "  setup_management_script      Настроить скрипт управления ботом"
+    echo "  setup_autostart              Настроить автозапуск бота"
+    echo "  setup_bot                    Выполнить полную установку (по умолчанию)"
+    echo "  help, --help                 Показать эту справочную информацию"
+}
+
+# Обработка аргументов
+case "$1" in
+    "install_dependencies")
+        install_dependencies
+        ;;
+    "download_and_extract_release")
+        download_and_extract_release
+        ;;
+    "create_virtualenv")
+        create_virtualenv
+        ;;
+    "install_requirements")
+        install_requirements
+        ;;
+    "create_env_file")
+        create_env_file
+        ;;
+    "setup_management_script")
+        setup_management_script
+        ;;
+    "setup_autostart")
+        setup_autostart
+        ;;
+    "setup_bot" | "")
+        setup_bot
+        ;;
+    "help" | "--help")
+        show_help
+        ;;
+    *)
+        echo -e "${RED}Неизвестная команда: $1${NC}"
+        echo "Используйте './install_bot.sh help' для справки."
+        exit 1
+        ;;
+esac
