@@ -17,8 +17,6 @@ SCRIPT_DIR="/opt/bin"
 mkdir -p "$SCRIPT_DIR"
 SCRIPT_PATH="$SCRIPT_DIR/vpnbot"
 LOG_FILE="/var/log/vpnbot_install.log"
-PYTHON_DEPS="aiogram asyncio python-dotenv setuptools wheel"
-current_version=""
 
 # Проверка прав root
 if [ "$(id -u)" -ne 0 ]; then
@@ -60,14 +58,6 @@ install_dependencies() {
 get_latest_release_info() {
     local release_url="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
     curl -sH "Accept: application/vnd.github.v3+json" "$release_url"
-
-    # Определяем версию
-    current_version=$(curl -sH "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest" | jq -r '.tag_name')
-
-    if [ -z "$current_version" ]; then
-        log "${RED}Ошибка: Не удалось получить информацию о последнем релизе.${NC}"
-        exit 1
-    fi
 }
 
 # Скачивание и распаковка релиза
@@ -172,6 +162,18 @@ install_requirements() {
 create_env_file() {
     log "${CYAN}${BOLD}Настраиваем файл конфигурации (.env)...${NC}"
 
+    # Получение последней версии бота
+    local latest_release_info
+    latest_release_info=$(get_latest_release_info)
+
+    local latest_version
+    latest_version=$(echo "$latest_release_info" | grep -oP '"tag_name":\s*"\K[^"]+')
+
+    if [ -z "$latest_version" ]; then
+        log "${RED}Не удалось определить последнюю версию. Убедитесь, что есть доступ к GitHub API.${NC}"
+        exit 1
+    fi
+
     # Сбор обязательных данных
     while [ -z "$BOT_TOKEN" ]; do
         read -s -p "Введите токен бота (BOT_TOKEN) [обязательно]: " BOT_TOKEN
@@ -188,12 +190,13 @@ create_env_file() {
     # Установим значение по умолчанию для LOG, если пользователь его не ввел
     LOG_LEVEL=${LOG_LEVEL:-INFO}
 
-    # Создание файла .env
+    # Создание .env файла с версией
     cat <<EOF >"$BOT_DIR/.env"
 BOT_TOKEN="$BOT_TOKEN"
 ALLOWED_USERS="$ALLOWED_USERS"
 LOG="$LOG_LEVEL"
 ENV="PROD"
+VER="$latest_version"
 EOF
 
     log "${GREEN}.env файл успешно создан!${NC}"
@@ -249,6 +252,7 @@ show_help() {
     echo "  setup_management_script      Настроить скрипт управления ботом"
     echo "  setup_autostart              Настроить автозапуск бота"
     echo "  setup_bot                    Выполнить полную установку (по умолчанию)"
+    echo "  upgrade                      Обновить бота до последней версии"
     echo "  cleanup, --clean, -c         Очистить ненужные файлы, оставшиеся от установки"
     echo "  help, --help                 Показать эту справочную информацию"
 }
@@ -261,28 +265,6 @@ cleanup() {
     rm "$BOT_DIR/requirements.txt"
     rm "$BOT_DIR/README.md"
     log "${GREEN}Временные файлы успешно удалены.${NC}"
-}
-
-# Проверка обновлений (поиск новых релизов и сравнение с текущим)
-check_update() {
-    local latest_release_info
-    latest_release_info=$(get_latest_release_info)
-
-    local latest_version
-    latest_version=$(echo "$latest_release_info" | grep -oP '"tag_name":\s*"\K[^"]+')
-
-    if [ "$current_version" != "$latest_version" ]; then
-        log "${YELLOW}Доступна новая версия бота: $latest_version.${NC}"
-        log "${YELLOW}Вы хотите обновить бота? (y/N)${NC}"
-        read -r response
-        if [ "$response" == "y" ] || [ "$response" == "Y" ]; then
-            upgrade_bot
-        else
-            log "${GREEN}Обновление бота отменено.${NC}"
-        fi
-    else
-        log "${GREEN}Установленная версия бота актуальна.${NC}"
-    fi
 }
 
 # Основная установка
@@ -304,20 +286,77 @@ setup_bot() {
 # Обновление бота
 upgrade_bot() {
     log "${CYAN}Запуск обновления VPN-бота...${NC}"
-    # Создаем временную копию .env
-    cp "$BOT_DIR/.env" "/opt/tmp/temp_env"
-    # Удаляем предыдущий релиз
+
+    # Получение информации о последнем релизе
+    local latest_release_info
+    latest_release_info=$(get_latest_release_info)
+
+    local latest_version
+    latest_version=$(echo "$latest_release_info" | grep -oP '"tag_name":\s*"\K[^"]+')
+
+    if [ -z "$latest_version" ]; then
+        log "${RED}Не удалось получить последнюю версию. Проверьте соединение с GitHub API.${NC}"
+        exit 1
+    fi
+
+    # Проверка текущей версии
+    local current_version="Не установлена"
+    if [ -f "$BOT_DIR/.env" ]; then
+        current_version=$(grep -oP '^VER="\K[^"]+' "$BOT_DIR/.env" || echo "Не установлена")
+    fi
+
+    # Проверка на совпадение версий
+    if [ "$current_version" = "$latest_version" ]; then
+        log "${GREEN}Версия $current_version уже актуальна. Обновление не требуется.${NC}"
+        exit 0
+    fi
+
+    log "${YELLOW}Текущая версия: $current_version${NC}"
+    log "${YELLOW}Доступна новая версия: $latest_version${NC}"
+
+    # Подтверждение от пользователя
+    echo -e "${YELLOW}Вы хотите обновить до версии $latest_version? (y/n): ${NC}"
+    read -r confirm
+    if [ "$confirm" != "y" ]; then
+        log "${RED}Обновление отменено пользователем.${NC}"
+        exit 0
+    fi
+
+    # Резервное копирование .env
+    local env_backup="/opt/tmp/.env"
+    mkdir -p "/opt/tmp"
+    if [ -f "$BOT_DIR/.env" ]; then
+        cp "$BOT_DIR/.env" "$env_backup"
+    fi
+
+    # Удаляем старую версию
+    log "${CYAN}Удаляем старую версию бота...${NC}"
+    vpnbot stop
+    sleep 5
     rm -rf "$BOT_DIR"
     rm -f "/var/run/vpnbot.pid"
     rm -f "$SCRIPT_PATH"
-    # Устанавливаем новый релиз
+
+    # Загрузка и установка новой версии
     download_and_extract_release
+    create_virtualenv
     install_requirements
     setup_management_script
     setup_autostart
     cleanup
-    # Восстанавливаем .env
-    mv "/opt/tmp/temp_env" "$BOT_DIR/.env"
+
+    # Восстановление .env
+    if [ -f "$env_backup" ]; then
+        mv "$env_backup" "$BOT_DIR/.env"
+        rm -f "$env_backup"
+
+        # Обновление версии в .env
+        sed -i "s/^VER=.*/VER=\"$latest_version\"/" "$BOT_DIR/.env"
+    else
+        # Создание нового .env, если бэкапа не существует
+        сreate_env_file
+    fi
+
     log "${GREEN}${BOLD}Обновление завершено! Запускаю бота...${NC}"
     vpnbot start
     log "${GREEN}Бот успешно обновлен и запущен.${NC}"
@@ -351,9 +390,6 @@ case "$1" in
         ;;
     "setup_bot" | "install" | "--setup" | "--install" | "")
         setup_bot
-        ;;
-    "check_update" | "--check")
-        check_update
         ;;
     "upgrade")
         upgrade_bot
