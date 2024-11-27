@@ -254,23 +254,6 @@ cleanup() {
     log "${GREEN}Временные файлы успешно удалены.${NC}"
 }
 
-# Памятка после установки
-show_post_install_info() {
-    echo -e "${YELLOW}${BOLD}================================${NC}"
-    echo -e "${YELLOW}${BOLD}             ПАМЯТКА            ${NC}"
-    echo -e "${YELLOW}${BOLD}================================${NC}"
-    echo -e ""
-    echo -e "${BOLD}Дополнительные команды скрипта:${NC}"
-    show_help
-    echo -e "${BOLD}Управление ботом на сервере:${NC}"
-    vpnbot --help
-    echo -e ""
-    echo -e "${BOLD}Переменные и их изменение:${NC}"
-    echo -e "Переменные хранятся в /opt/apps/vpnbot/.env"
-    echo -e "Вы можете изменить их вручную, но рекомендуется использовать скрипт управления ботом."
-    echo -e ""
-}
-
 # Основная установка
 setup_bot() {
     log "${CYAN}Запуск установки VPN-бота...${NC}"
@@ -285,9 +268,29 @@ setup_bot() {
     log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
     vpnbot start
     log "${GREEN}Бот успешно установлен и запущен.${NC}"
-    show_post_install_info
 }
 
+# Обновление бота
+upgrade_bot() {
+    log "${CYAN}Запуск обновления VPN-бота...${NC}"
+    # Создаем временную копию .env
+    cp "$BOT_DIR/.env" "/opt/tmp/temp_env"
+    # Удаляем предыдущий релиз
+    rm -rf "$BOT_DIR"
+    rm -f "/var/run/vpnbot.pid"
+    rm -f "$SCRIPT_PATH"
+    # Устанавливаем новый релиз
+    download_and_extract_release
+    install_requirements
+    setup_management_script
+    setup_autostart
+    cleanup
+    # Восстанавливаем .env
+    mv "/opt/tmp/temp_env" "$BOT_DIR/.env"
+    log "${GREEN}${BOLD}Обновление завершено! Запускаю бота...${NC}"
+    vpnbot start
+    log "${GREEN}Бот успешно обновлен и запущен.${NC}"
+}
 
 # Обработка аргументов
 case "$1" in
@@ -317,6 +320,9 @@ case "$1" in
         ;;
     "setup_bot" | "install" | "--setup" | "--install" | "")
         setup_bot
+        ;;
+    "upgrade")
+        upgrade_bot
         ;;
     "help" | "--help")
         show_help
