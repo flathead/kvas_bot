@@ -193,11 +193,13 @@ EOF
 # Создание скрипта управления
 setup_management_script() {
     log "${YELLOW}Добавление скрипта управления vpnbot...${NC}"
+    # Копируем скрипт в целевую папку
     mkdir -p "$(dirname "$SCRIPT_PATH")"
-    ln -sf "$BOT_DIR/scripts/vpnbot.sh" "$SCRIPT_PATH"
-    chmod +x "$BOT_DIR/scripts/vpnbot.sh"
+    cp "$BOT_DIR/scripts/vpnbot.sh" "$SCRIPT_PATH"
+    chmod +x "$SCRIPT_PATH"
     log "${GREEN}Скрипт управления установлен! Используйте 'vpnbot' для управления.${NC}"
 
+    # Проверяем, добавлен ли каталог в PATH, и добавляем при необходимости
     if ! echo "$PATH" | grep -q "$SCRIPT_DIR"; then
         echo "export PATH=\$PATH:$SCRIPT_DIR" >> /etc/profile
         export PATH=$PATH:$SCRIPT_DIR
@@ -246,7 +248,7 @@ show_help() {
 cleanup() {
     log "${YELLOW}Удаляю временные файлы...${NC}"
     rm "$BOT_DIR/deps.tar.gz"
-    rm "$BOT_DIR/scripts/install_bot.sh"
+    rm -rf "$BOT_DIR/scripts"
     rm "$BOT_DIR/requirements.txt"
     rm "$BOT_DIR/README.md"
     log "${GREEN}Временные файлы успешно удалены.${NC}"
