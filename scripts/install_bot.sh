@@ -18,6 +18,7 @@ mkdir -p "$SCRIPT_DIR"
 SCRIPT_PATH="$SCRIPT_DIR/vpnbot"
 LOG_FILE="/var/log/vpnbot_install.log"
 PYTHON_DEPS="aiogram asyncio python-dotenv setuptools wheel"
+current_version=""
 
 # Проверка прав root
 if [ "$(id -u)" -ne 0 ]; then
@@ -59,6 +60,14 @@ install_dependencies() {
 get_latest_release_info() {
     local release_url="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
     curl -sH "Accept: application/vnd.github.v3+json" "$release_url"
+
+    # Определяем версию
+    current_version=$(curl -sH "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest" | jq -r '.tag_name')
+
+    if [ -z "$current_version" ]; then
+        log "${RED}Ошибка: Не удалось получить информацию о последнем релизе.${NC}"
+        exit 1
+    fi
 }
 
 # Скачивание и распаковка релиза
@@ -254,6 +263,28 @@ cleanup() {
     log "${GREEN}Временные файлы успешно удалены.${NC}"
 }
 
+# Проверка обновлений (поиск новых релизов и сравнение с текущим)
+check_update() {
+    local latest_release_info
+    latest_release_info=$(get_latest_release_info)
+
+    local latest_version
+    latest_version=$(echo "$latest_release_info" | grep -oP '"tag_name":\s*"\K[^"]+')
+
+    if [ "$current_version" != "$latest_version" ]; then
+        log "${YELLOW}Доступна новая версия бота: $latest_version.${NC}"
+        log "${YELLOW}Вы хотите обновить бота? (y/N)${NC}"
+        read -r response
+        if [ "$response" == "y" ] || [ "$response" == "Y" ]; then
+            upgrade_bot
+        else
+            log "${GREEN}Обновление бота отменено.${NC}"
+        fi
+    else
+        log "${GREEN}Установленная версия бота актуальна.${NC}"
+    fi
+}
+
 # Основная установка
 setup_bot() {
     log "${CYAN}Запуск установки VPN-бота...${NC}"
@@ -320,6 +351,9 @@ case "$1" in
         ;;
     "setup_bot" | "install" | "--setup" | "--install" | "")
         setup_bot
+        ;;
+    "check_update" | "--check")
+        check_update
         ;;
     "upgrade")
         upgrade_bot
