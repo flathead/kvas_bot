@@ -358,8 +358,6 @@ class VPNBot:
         await update.message.reply_text("Операция отменена.")
         return ConversationHandler.END
 
-    # ... (rest of the methods remain the same as in the previous implementation)
-
     def _validate_domain(self, domain: str) -> bool:
         """Enhanced domain validation."""
         if not domain or len(domain) > 255:
@@ -388,7 +386,7 @@ class VPNBot:
             ["📜 Список сайтов"],
             ["➕ Добавить сайт", "➖ Удалить сайт"],
             ["🆘 Помощь"],
-            ["🔄 Перезагрузить роутер", "🔄 Перезагрузить бота"],
+            ["🔄 Перезагрузить роутер"],
         ]
         return ReplyKeyboardMarkup(
             keyboard=keyboard, 
