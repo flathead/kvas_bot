@@ -23,7 +23,6 @@ class ConversationStates:
     ADD_SITE = 0        # Добавление сайта
     DELETE_SITE = 1     # Удаление сайта
     REBOOT_ROUTER = 2   # Перезагрузка роутера
-    REBOOT_BOT = 3      # Перезагрузка бота
 
 class VPNBot:
     def __init__(self, config: Config, router_client: RouterLocalClient):
@@ -67,8 +66,7 @@ class VPNBot:
             entry_points=[
                 MessageHandler(filters.Regex(r"➕ Добавить сайт"), self.ask_add_site),
                 MessageHandler(filters.Regex(r"➖ Удалить сайт"), self.ask_delete_site),
-                MessageHandler(filters.Regex(r"🔄 Перезагрузить роутер"), self.ask_reboot_router),
-                MessageHandler(filters.Regex(r"🔄 Перезагрузить бота"), self.ask_reboot_bot),
+                MessageHandler(filters.Regex(r"🔄 Перезагрузить роутер"), self.ask_reboot_router)
             ],
             states={
                 ConversationStates.ADD_SITE: [
@@ -79,10 +77,7 @@ class VPNBot:
                 ],
                 ConversationStates.REBOOT_ROUTER: [
                     MessageHandler(filters.Regex(r"^(Да|Нет)$"), self.reboot_router)
-                ],
-                ConversationStates.REBOOT_BOT: [
-                    MessageHandler(filters.Regex(r"^(Да|Нет)$"), self.reboot_bot)
-                ],
+                ]
             },
             fallbacks=[CommandHandler('cancel', self.cancel_operation)],
             allow_reentry=True
@@ -351,30 +346,6 @@ class VPNBot:
             try:
                 await update.message.reply_text(text="✅ Роутер успешно перезагружен.", reply_markup=self._get_menu_keyboard())
                 await self.router_client.execute_command("reboot")
-            except Exception as e:
-                self.logger.error(f"Ошибка перезагрузки роутера: {e}", exc_info=True)
-                await update.message.reply_text(f"❌ Ошибка перезагрузки: {str(e)}")
-        else:
-            await update.message.reply_text(text="❌ Перезагрузка отменена.", reply_markup=self._get_menu_keyboard())
-        return ConversationHandler.END
-    
-    async def ask_reboot_bot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Вопрос на перезагрузку бота."""
-        if not await self._is_user_allowed(update.effective_user.id):
-            await update.message.reply_text(MESSAGES['access_denied'])
-            return ConversationHandler.END
-        await update.message.reply_text(
-            "🤔 Вы действительно хотите перезагрузить бота?",
-            reply_markup=ReplyKeyboardMarkup([["Да", "Нет"]], resize_keyboard=True),
-        )
-        return ConversationStates.REBOOT_BOT
-
-    async def reboot_bot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Перезагрузка роутера."""
-        if update.message.text.strip().lower() == "да":
-            try:
-                await update.message.reply_text(text="✅ Бот успешно перезагружен.", reply_markup=self._get_menu_keyboard())
-                await self.router_client.execute_command("vpnbot restart")
             except Exception as e:
                 self.logger.error(f"Ошибка перезагрузки роутера: {e}", exc_info=True)
                 await update.message.reply_text(f"❌ Ошибка перезагрузки: {str(e)}")

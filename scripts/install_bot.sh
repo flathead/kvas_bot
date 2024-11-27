@@ -26,9 +26,9 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Приветствие
-echo -e "${CYAN}${BOLD}====================================${NC}"
-echo -e "${CYAN}${BOLD} УСТАНОВКА VPN БОТА ${NC}"
-echo -e "${CYAN}${BOLD}====================================${NC}"
+echo -e "${CYAN}${BOLD}===============================${NC}"
+echo -e "${CYAN}${BOLD}       УСТАНОВКА VPN БОТА      ${NC}"
+echo -e "${CYAN}${BOLD}===============================${NC}"
 
 # Убедиться, что лог-файл доступен
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -238,17 +238,35 @@ show_help() {
     echo "  setup_management_script      Настроить скрипт управления ботом"
     echo "  setup_autostart              Настроить автозапуск бота"
     echo "  setup_bot                    Выполнить полную установку (по умолчанию)"
+    echo "  cleanup, --clean, -c         Очистить ненужные файлы, оставшиеся от установки"
     echo "  help, --help                 Показать эту справочную информацию"
 }
 
 # Очистка ненужных файлов
 cleanup() {
     log "${YELLOW}Удаляю временные файлы...${NC}"
-    rm -f "$BOT_DIR/deps.tar.gz"
-    rm -rf "$BOT_DIR/scripts/install_bot.sh"
-    rm -rf "$BOT_DIR/requirements.txt"
-    rm -rf "$BOT_DIR/README.md"
+    rm "$BOT_DIR/deps.tar.gz"
+    rm "$BOT_DIR/scripts/install_bot.sh"
+    rm "$BOT_DIR/requirements.txt"
+    rm "$BOT_DIR/README.md"
     log "${GREEN}Временные файлы успешно удалены.${NC}"
+}
+
+# Памятка после установки
+show_post_install_info() {
+    echo -e "${YELLOW}${BOLD}================================${NC}"
+    echo -e "${YELLOW}${BOLD}             ПАМЯТКА            ${NC}"
+    echo -e "${YELLOW}${BOLD}================================${NC}"
+    echo -e ""
+    echo -e "${BOLD}Дополнительные команды скрипта:${NC}"
+    show_help
+    echo -e "${BOLD}Управление ботом на сервере:${NC}"
+    vpnbot --help
+    echo -e ""
+    echo -e "${BOLD}Переменные и их изменение:${NC}"
+    echo -e "Переменные хранятся в /opt/apps/vpnbot/.env"
+    echo -e "Вы можете изменить их вручную, но рекомендуется использовать скрипт управления ботом."
+    echo -e ""
 }
 
 # Основная установка
@@ -261,11 +279,11 @@ setup_bot() {
     create_env_file
     setup_management_script
     setup_autostart
-    log "${YELLOW}Удаляю временные файлы...${NC}"
     cleanup
     log "${GREEN}${BOLD}Установка завершена! Запускаю бота...${NC}"
     vpnbot start
     log "${GREEN}Бот успешно установлен и запущен.${NC}"
+    show_post_install_info
 }
 
 
@@ -292,7 +310,7 @@ case "$1" in
     "setup_autostart")
         setup_autostart
         ;;
-    "cleanup")
+    "cleanup" | "--clean" | "-c")
         cleanup
         ;;
     "setup_bot" | "install" | "--setup" | "--install" | "")
@@ -300,6 +318,9 @@ case "$1" in
         ;;
     "help" | "--help")
         show_help
+        ;;
+    "post_install_info")
+        show_post_install_info
         ;;
     *)
         echo -e "${RED}Неизвестная команда: $1${NC}"
