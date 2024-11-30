@@ -271,17 +271,32 @@ EOF
     chmod +x "$START_SCRIPT"
     log "${GREEN}Скрипт автозапуска создан и сделан исполняемым.${NC}"
 
-    # Проверяем файл autorun, если он существует
-    if [ -w "$AUTORUN_FILE" ]; then
-        log "${YELLOW}Добавляю автозапуск в $AUTORUN_FILE, если он отсутствует...${NC}"
-        if ! grep -q "$INIT_SCRIPT start" "$AUTORUN_FILE"; then
-            echo "$INIT_SCRIPT start" >>"$AUTORUN_FILE"
-            log "${GREEN}Автозапуск добавлен в $AUTORUN_FILE.${NC}"
-        else
-            log "${GREEN}Запись автозапуска уже существует в $AUTORUN_FILE.${NC}"
-        fi
+    # Создаём или обновляем файл autorun
+    if [ ! -f "$AUTORUN_FILE" ]; then
+        log "${YELLOW}Файл $AUTORUN_FILE отсутствует. Создаю новый...${NC}"
+        cat <<EOF >"$AUTORUN_FILE"
+#!/bin/sh
+# Автозапуск Entware
+# Добавляйте сюда свои команды для автозапуска
+
+# Запуск VPN бота
+$INIT_SCRIPT start
+EOF
+        chmod +x "$AUTORUN_FILE"
+        log "${GREEN}Файл $AUTORUN_FILE успешно создан.${NC}"
     else
-        log "${RED}Файл $AUTORUN_FILE недоступен для записи. Пропускаю настройку.${NC}"
+        log "${GREEN}Файл $AUTORUN_FILE уже существует. Проверяю наличие строки...${NC}"
+        if ! grep -q "$INIT_SCRIPT start" "$AUTORUN_FILE"; then
+            echo "# Запуск VPN бота" >>"$AUTORUN_FILE"
+            echo "$INIT_SCRIPT start" >>"$AUTORUN_FILE"
+            if grep -q "$INIT_SCRIPT start" "$AUTORUN_FILE"; then
+                log "${GREEN}Строка успешно добавлена в $AUTORUN_FILE.${NC}"
+            else
+                log "${RED}Ошибка: не удалось добавить строку в $AUTORUN_FILE.${NC}"
+            fi
+        else
+            log "${GREEN}Строка уже существует в $AUTORUN_FILE. Пропускаю добавление.${NC}"
+        fi
     fi
 
     log "${GREEN}Настройка автозапуска завершена.${NC}"
