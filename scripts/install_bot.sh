@@ -17,6 +17,9 @@ SCRIPT_DIR="/opt/bin"
 mkdir -p "$SCRIPT_DIR"
 SCRIPT_PATH="$SCRIPT_DIR/vpnbot"
 LOG_FILE="/var/log/vpnbot_install.log"
+INITD_DIR="/opt/etc/init.d"
+AUTORUN_FILE="/opt/etc/entware.autorun"
+START_SCRIPT="$INITD_DIR/S99vpnbot"
 
 # Проверка прав root
 if [ "$(id -u)" -ne 0 ]; then
@@ -224,20 +227,64 @@ setup_management_script() {
 }
 
 setup_autostart() {
-    log "${YELLOW}Добавление автозапуска бота через cron...${NC}"
+    log "${YELLOW}Настройка автозапуска VPN-бота...${NC}"
 
-    # Удаляем старые задания с упоминанием vpnbot
-    crontab -l 2>/dev/null | grep -v "vpnbot start" | crontab -
+    # Проверяем доступность пути для init.d
+    if [ ! -d "$INITD_DIR" ]; then
+        log "${RED}Директория $INITD_DIR отсутствует. Убедитесь, что Entware установлена.${NC}"
+        return 1
+    fi
 
-    # Добавляем новое задание
-    (crontab -l 2>/dev/null; echo "@reboot $SCRIPT_PATH start") | crontab -
+    # Создаём скрипт автозапуска
+    log "${YELLOW}Создаём скрипт $START_SCRIPT...${NC}"
+    cat <<EOF >"$START_SCRIPT"
+#!/bin/sh
+START=99
+STOP=10
+case "\$1" in
+    start)
+        echo "Starting VPN bot..."
+        /opt/bin/vpnbot start
+        ;;
+    stop)
+        echo "Stopping VPN bot..."
+        /opt/bin/vpnbot stop
+        ;;
+    restart)
+        echo "Restarting VPN bot..."
+        /opt/bin/vpnbot restart
+        ;;
+    *)
+        echo "Usage: \$0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+EOF
 
-    log "${GREEN}Автозапуск бота успешно настроен через cron.${NC}"
+    # Проверяем успешность создания скрипта
+    if [ ! -f "$START_SCRIPT" ]; then
+        log "${RED}Ошибка: скрипт $START_SCRIPT не был создан. Проверьте доступность записи.${NC}"
+        return 1
+    fi
 
-    # Добавляем в cron команду на ежедневную очистку логов в 2 утра
-    (crontab -l 2>/dev/null; echo "0 2 * * * vpnbot clear") | crontab -
+    # Делаем его исполняемым
+    chmod +x "$START_SCRIPT"
+    log "${GREEN}Скрипт автозапуска создан и сделан исполняемым.${NC}"
 
-    log "${GREEN}Ежедневная очистка логов бота успешно настроена через cron.${NC}"
+    # Проверяем файл autorun, если он существует
+    if [ -w "$AUTORUN_FILE" ]; then
+        log "${YELLOW}Добавляю автозапуск в $AUTORUN_FILE, если он отсутствует...${NC}"
+        if ! grep -q "$INIT_SCRIPT start" "$AUTORUN_FILE"; then
+            echo "$INIT_SCRIPT start" >>"$AUTORUN_FILE"
+            log "${GREEN}Автозапуск добавлен в $AUTORUN_FILE.${NC}"
+        else
+            log "${GREEN}Запись автозапуска уже существует в $AUTORUN_FILE.${NC}"
+        fi
+    else
+        log "${RED}Файл $AUTORUN_FILE недоступен для записи. Пропускаю настройку.${NC}"
+    fi
+
+    log "${GREEN}Настройка автозапуска завершена.${NC}"
 }
 
 # Справочная информация
