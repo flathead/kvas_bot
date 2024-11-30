@@ -11,6 +11,7 @@ KVAS VPN Bot - это Telegram-бот для управления спискам
 
 ### Необходимые компоненты
 - Роутер Keenetic с SSH-доступом
+- Установленный Shadowsocks. Можно использовать мой скрипт для быстрой установки: [Shadowsocks easy installer](https://github.com/flathead/shadowsocks-installer)
 - Установленная [утилита КВАС](https://github.com/qzeleza/kvas)
 - Токен Telegram-бота от [@BotFather](https://t.me/botfather)
 
